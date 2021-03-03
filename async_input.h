@@ -1,0 +1,298 @@
+/* Audio Library for Teensy 3.X
+ * Copyright (c) 2019, Paul Stoffregen, paul@pjrc.com
+ *
+ * Development of this audio library was funded by PJRC.COM, LLC by sales of
+ * Teensy and Audio Adaptor boards.  Please support PJRC's efforts to develop
+ * open source software by purchasing Teensy or other PJRC products.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice, development funding notice, and this permission
+ * notice shall be included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+/*
+ by Alexander Walch
+ */
+#ifndef async_input_h_
+#define async_input_h_
+#include "Resampler.h"
+#include "Quantizer.h"
+#include "biquad.h"
+#include "FrequencyMeasurement.h"
+#include "input_i2s.h"
+#include "AudioStream.h"
+#include "Audio.h"
+#include "DMAChannel.h"
+#include "Arduino.h"
+#include <arm_math.h>
+
+template <typename I>
+class AsyncAudioInput : public AudioStream
+{
+public:
+
+	#define NOCHANNELS I::getNumberOfChannels()
+
+	///@param attenuation target attenuation [dB] of the anti-aliasing filter. Only used if newFs<fs. The attenuation can't be reached if the needed filter length exceeds 2*MAX_FILTER_SAMPLES+1
+	///@param minHalfFilterLength If newFs >= fs, the filter length of the resampling filter is 2*minHalfFilterLength+1. If fs y newFs the filter is maybe longer to reach the desired attenuation
+	AsyncAudioInput(bool dither=false, bool noiseshaping=false,float attenuation=100, int32_t minHalfFilterLength=20, int32_t maxHalfFilterLength= 80):
+		AudioStream(0, NULL),
+		_resampler(attenuation, minHalfFilterLength, maxHalfFilterLength),
+		_input(true)
+		{
+		_inputFrequency=-1.;
+		const float factor = powf(2, 15)-1.f; // to 16 bit audio
+
+		_bufferLPFilter.pCoeffs=new float[5];
+		_bufferLPFilter.numStages=1;
+		_bufferLPFilter.pState=new float[2];
+		getCoefficients(_bufferLPFilter.pCoeffs, BiquadType::LOW_PASS, 0., 5., AUDIO_SAMPLE_RATE_EXACT/AUDIO_BLOCK_SAMPLES, 0.5);
+		float* b[NOCHANNELS];
+		for (uint8_t i =0 ; i< NOCHANNELS; i++){
+			b[i]=&(_buffer[i][0]);
+			quantizer[i]= new Quantizer(AUDIO_SAMPLE_RATE);
+			quantizer[i]->configure(noiseshaping, dither, factor);
+		}
+		_noSamplesPerIsr=I::getNumberOfSamplesPerIsr();
+		_resampleOffset=0;
+		__disable_irq();
+		_input.setResampleBuffer(b, _bufferLength);
+		_input.setResampleOffset(_resampleOffset);
+		_input.setFrequencyMeasurment(updateFrequMeasure);
+		__enable_irq();	
+	}
+	~AsyncAudioInput(){
+		delete [] _bufferLPFilter.pCoeffs;
+		delete [] _bufferLPFilter.pState;
+		for (uint8_t i =0 ; i< NOCHANNELS; i++){
+			delete quantizer[i];
+		}
+	}
+
+	virtual void update(void)
+	{	
+		frequMeasure.computeFrequency();
+		configure();
+		monitorResampleBuffer();	//important first call 'monitorResampleBuffer' then 'resample'	
+		audio_block_t *blocks[NOCHANNELS];
+		audio_block_t** b=blocks;
+		for (uint8_t i =0; i< NOCHANNELS; i++){
+			*b= allocate();
+			if(*b==nullptr){
+				b=blocks;
+				for (uint8_t j=0; j< i; j++){
+					release(*b);
+					*b++=nullptr;
+				}
+				break;
+			}
+			++b;
+		}
+		if (blocks[0]) {
+			int32_t block_offset=0;
+			resample(blocks, block_offset);
+			if(block_offset < AUDIO_BLOCK_SAMPLES){
+				for (uint8_t i =0; i< NOCHANNELS; i++){
+					memset(blocks[i]->data+block_offset, 0, (AUDIO_BLOCK_SAMPLES-block_offset)*sizeof(int16_t)); 				
+				}
+			}
+			for (uint8_t i =0; i< NOCHANNELS; i++){
+				transmit(blocks[i], i);
+				release(blocks[i]);
+				blocks[i]=nullptr;
+			}
+		}
+	}
+	
+	double getTargetLantency() const {
+		AudioNoInterrupts();
+		double l=_targetLatencyS;
+		AudioInterrupts();
+		return l ;
+	}
+
+	double getAttenuation() const{
+		AudioNoInterrupts();
+		double a= _resampler.getAttenuation();
+		AudioInterrupts();
+		return a;
+	}
+
+	int32_t getHalfFilterLength() const{
+		AudioNoInterrupts();
+		int32_t l= _resampler.getHalfFilterLength();
+		AudioInterrupts();
+		return l;
+	}
+
+	double getInputFrequency() const {
+		AudioNoInterrupts();
+		double f=frequMeasure.getFrequency();
+		AudioInterrupts();
+		return f;
+	}
+
+	double getBufferedTime() const{
+		AudioNoInterrupts();
+		double n=_bufferedTime;
+		AudioInterrupts();
+		return n;
+	}
+private:
+
+	static FrequencyMeasurement frequMeasure;
+	Resampler _resampler;
+	Quantizer* quantizer[NOCHANNELS];
+	I _input;
+	arm_biquad_cascade_df2T_instance_f32 _bufferLPFilter;
+
+	constexpr static int32_t _bufferLength=(int32_t)( 1 + ceil(192000.f/AUDIO_SAMPLE_RATE))*AUDIO_BLOCK_SAMPLES;	//maximum input sample rate is 192kHz
+	float _buffer[NOCHANNELS][_bufferLength];
+	volatile double _bufferedTime;
+	double _inputFrequency;
+	int32_t _noSamplesPerIsr;
+	int32_t _resampleOffset;
+	double _targetLatencyS;	//target latency [seconds]
+	const double _blockDuration=AUDIO_BLOCK_SAMPLES/AUDIO_SAMPLE_RATE; //[seconds] 
+	
+	double _maxLatency=2.*_blockDuration;
+
+	void resample(audio_block_t **blocks, int32_t& block_offset){
+		block_offset=0;
+		if(!_resampler.initialized()){
+			return;
+		}
+		__disable_irq();
+		int32_t bOffset=_input.getBufferOffset();
+		__enable_irq();
+
+		uint16_t inputBufferStop = bOffset >= _resampleOffset ? bOffset-_resampleOffset : _bufferLength-_resampleOffset;
+		if (inputBufferStop==0){
+			return;
+		}
+		
+		uint16_t processedLength=0;
+		uint16_t outputCount=0;
+		uint16_t outputLength=AUDIO_BLOCK_SAMPLES;
+		float outputs[NOCHANNELS][AUDIO_BLOCK_SAMPLES];
+		float* outputsPtr[NOCHANNELS];
+		float* inputs[NOCHANNELS];
+		for (uint8_t i =0 ; i< NOCHANNELS; i++){
+			inputs[i]=_buffer[i]+_resampleOffset;
+			outputsPtr[i]=&(outputs[i][0]);
+		}
+		_resampler.resample<NOCHANNELS>(inputs, inputBufferStop, processedLength, outputsPtr, outputLength, outputCount);
+
+		_resampleOffset=(_resampleOffset+processedLength)%_bufferLength;
+		block_offset=outputCount;	
+
+		if (bOffset > _resampleOffset && block_offset< AUDIO_BLOCK_SAMPLES){
+			inputBufferStop= bOffset-_resampleOffset;
+			outputLength=AUDIO_BLOCK_SAMPLES-block_offset;
+			for (uint8_t i =0 ; i< NOCHANNELS; i++){
+				inputs[i]=_buffer[i]+_resampleOffset;
+			}
+			_resampler.resample<NOCHANNELS>(inputs, inputBufferStop, processedLength, outputsPtr, outputLength, outputCount);		
+			_resampleOffset=(_resampleOffset+processedLength)%_bufferLength;
+			block_offset+=outputCount;
+		}
+		for (int32_t i =0; i< NOCHANNELS; i++){
+			quantizer[i]->quantize(outputs[i], blocks[i]->data, block_offset);
+		}
+		__disable_irq();
+		_input.setResampleOffset(_resampleOffset);
+		__enable_irq();	
+	}
+
+	static void updateFrequMeasure(){
+		frequMeasure.update();
+	}
+	
+	void configure(){
+		const double inputF=frequMeasure.getFrequency();	//returns: -1 ... invalid frequency
+		if (inputF > 0.){
+			//we got a valid sample frequency
+			const double frequDiff=inputF/_inputFrequency-1.;
+			if (abs(frequDiff) > 0.01 || !_resampler.initialized()){
+				//the new sample frequency differs from the last one -> configure the _resampler again
+				_inputFrequency=inputF;		
+				_targetLatencyS=max(0.001,(_noSamplesPerIsr*3./2./_inputFrequency));
+				_maxLatency=max(2.*_blockDuration, 2*_noSamplesPerIsr/_inputFrequency);
+				const int32_t targetLatency=round(_targetLatencyS*inputF);
+				__disable_irq();
+				int32_t bOffset=_input.getBufferOffset();
+				_resampleOffset =  targetLatency <=  bOffset ? bOffset - targetLatency : _bufferLength -(targetLatency-bOffset);
+				_input.setResampleOffset(_resampleOffset);
+				__enable_irq();	
+				_resampler.configure(_inputFrequency,AUDIO_SAMPLE_RATE);		
+			}
+		}
+	}
+
+	void monitorResampleBuffer(){
+		if(!_resampler.initialized()){
+			return;
+		}
+
+		__disable_irq();
+
+		int32_t bOffset=_input.getBufferOffset();
+		const double dmaOffset=(micros()-frequMeasure.getTimeOfLastUpdate())*1e-6;	//[seconds]
+
+		double inputFrequency=frequMeasure.getLastValidFrequency();
+		
+		double bTime = _resampleOffset <= bOffset ? (bOffset-_resampleOffset-_resampler.getXPos())/inputFrequency+dmaOffset : (_bufferLength-_resampleOffset +bOffset-_resampler.getXPos())/inputFrequency+dmaOffset;	//[seconds]
+		
+		double diff = bTime- (_blockDuration+ _targetLatencyS);	//seconds
+
+		biquad_cascade_df2T<double, arm_biquad_cascade_df2T_instance_f32, float>(&_bufferLPFilter, &diff, &diff, 1);
+		
+		bool settled=_resampler.addToSampleDiff(diff);
+		
+		if (bTime > _maxLatency || bTime-dmaOffset<= _blockDuration || settled) {	
+			double distance=(_blockDuration+_targetLatencyS-dmaOffset)*inputFrequency+_resampler.getXPos();
+			diff=0.;
+			if (distance > _bufferLength-_noSamplesPerIsr){
+				diff=_bufferLength-_noSamplesPerIsr-distance;
+				distance=_bufferLength-_noSamplesPerIsr;
+			}
+			if (distance < 0.){
+				distance=0.;
+				diff=- (_blockDuration+ _targetLatencyS);
+			}
+			double resampleOffsetF=bOffset-distance;
+			_resampleOffset=(int32_t)floor(resampleOffsetF);
+			_resampler.addToPos(resampleOffsetF-_resampleOffset);
+			while (_resampleOffset<0){
+				_resampleOffset+=_bufferLength;
+			}	
+			_input.setResampleOffset(_resampleOffset);
+			__enable_irq();
+
+			//bTime=_blockDuration+_targetLatencyS;
+			preload(&_bufferLPFilter, diff);
+			_resampler.fixStep();		
+		}
+		else {
+			__enable_irq();
+		}
+		_bufferedTime=_targetLatencyS+diff;
+	}
+};
+template<typename I>
+FrequencyMeasurement AsyncAudioInput<I>::frequMeasure(I::getNumberOfSamplesPerIsr());
+
+#endif
