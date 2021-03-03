@@ -11,7 +11,7 @@ AudioOutputSPDIF3   spdifOut;
 Plotter plotter(8);  //only plot every 6th sample
 #endif
 
-AsyncAudioInput<AudioInputI2Sslave> i2sSlaveInput;
+AsyncAudioInputI2Sslave i2sSlaveInput;
 AudioConnection          patchCord1(i2sSlaveInput, 0, spdifOut, 0);
 AudioConnection          patchCord2(i2sSlaveInput, 1, spdifOut, 1);
 #ifdef PLOTWAVE

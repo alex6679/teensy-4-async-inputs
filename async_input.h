@@ -39,6 +39,7 @@
 #include "Arduino.h"
 #include <arm_math.h>
 
+
 template <typename I>
 class AsyncAudioInput : public AudioStream
 {
@@ -294,5 +295,8 @@ private:
 };
 template<typename I>
 FrequencyMeasurement AsyncAudioInput<I>::frequMeasure(I::getNumberOfSamplesPerIsr());
+
+
+typedef AsyncAudioInput<AudioInputI2Sslave> AsyncAudioInputI2Sslave;
 
 #endif
