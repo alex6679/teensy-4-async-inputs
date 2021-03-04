@@ -70,7 +70,7 @@ public:
 		_noSamplesPerIsr=I::getNumberOfSamplesPerIsr();
 		_resampleOffset=0;
 		__disable_irq();
-		_input.setResampleBuffer(b, _bufferLength);
+		_input.setResampleBuffer(b, bufferLength);
 		_input.setResampleOffset(_resampleOffset);
 		_input.setFrequencyMeasurment(updateFrequMeasure);
 		__enable_irq();	
@@ -159,17 +159,16 @@ private:
 	Quantizer* quantizer[NOCHANNELS];
 	I _input;
 	arm_biquad_cascade_df2T_instance_f32 _bufferLPFilter;
-
-	constexpr static int32_t _bufferLength=(int32_t)( 1 + ceil(192000.f/AUDIO_SAMPLE_RATE))*AUDIO_BLOCK_SAMPLES;	//maximum input sample rate is 192kHz
-	float _buffer[NOCHANNELS][_bufferLength];
+	constexpr static double blockDuration=AUDIO_BLOCK_SAMPLES/AUDIO_SAMPLE_RATE; //[seconds]
+	double _maxLatency=2.*blockDuration; 
+	constexpr static int32_t bufferLength=(int32_t)( 1 + ceil(192000.f/AUDIO_SAMPLE_RATE))*AUDIO_BLOCK_SAMPLES + (int32_t)(ceil(2.f*blockDuration * 192000.f));	//maximum input sample rate is 192kHz
+	float _buffer[NOCHANNELS][bufferLength];
 	volatile double _bufferedTime;
 	double _inputFrequency;
 	int32_t _noSamplesPerIsr;
 	int32_t _resampleOffset;
 	double _targetLatencyS;	//target latency [seconds]
-	const double _blockDuration=AUDIO_BLOCK_SAMPLES/AUDIO_SAMPLE_RATE; //[seconds] 
 	
-	double _maxLatency=2.*_blockDuration;
 
 	void resample(audio_block_t **blocks, int32_t& block_offset){
 		block_offset=0;
@@ -180,7 +179,7 @@ private:
 		int32_t bOffset=_input.getBufferOffset();
 		__enable_irq();
 
-		uint16_t inputBufferStop = bOffset >= _resampleOffset ? bOffset-_resampleOffset : _bufferLength-_resampleOffset;
+		uint16_t inputBufferStop = bOffset >= _resampleOffset ? bOffset-_resampleOffset : bufferLength-_resampleOffset;
 		if (inputBufferStop==0){
 			return;
 		}
@@ -197,7 +196,7 @@ private:
 		}
 		_resampler.resample<NOCHANNELS>(inputs, inputBufferStop, processedLength, outputsPtr, outputLength, outputCount);
 
-		_resampleOffset=(_resampleOffset+processedLength)%_bufferLength;
+		_resampleOffset=(_resampleOffset+processedLength)%bufferLength;
 		block_offset=outputCount;	
 
 		if (bOffset > _resampleOffset && block_offset< AUDIO_BLOCK_SAMPLES){
@@ -207,7 +206,7 @@ private:
 				inputs[i]=_buffer[i]+_resampleOffset;
 			}
 			_resampler.resample<NOCHANNELS>(inputs, inputBufferStop, processedLength, outputsPtr, outputLength, outputCount);		
-			_resampleOffset=(_resampleOffset+processedLength)%_bufferLength;
+			_resampleOffset=(_resampleOffset+processedLength)%bufferLength;
 			block_offset+=outputCount;
 		}
 		for (int32_t i =0; i< NOCHANNELS; i++){
@@ -231,11 +230,11 @@ private:
 				//the new sample frequency differs from the last one -> configure the _resampler again
 				_inputFrequency=inputF;		
 				_targetLatencyS=max(0.001,(_noSamplesPerIsr*3./2./_inputFrequency));
-				_maxLatency=max(2.*_blockDuration, 2*_noSamplesPerIsr/_inputFrequency);
+				_maxLatency=max(2.*blockDuration, 2*_noSamplesPerIsr/_inputFrequency);
 				const int32_t targetLatency=round(_targetLatencyS*inputF);
 				__disable_irq();
 				int32_t bOffset=_input.getBufferOffset();
-				_resampleOffset =  targetLatency <=  bOffset ? bOffset - targetLatency : _bufferLength -(targetLatency-bOffset);
+				_resampleOffset =  targetLatency <=  bOffset ? bOffset - targetLatency : bufferLength -(targetLatency-bOffset);
 				_input.setResampleOffset(_resampleOffset);
 				__enable_irq();	
 				_resampler.configure(_inputFrequency,AUDIO_SAMPLE_RATE);		
@@ -255,35 +254,34 @@ private:
 
 		double inputFrequency=frequMeasure.getLastValidFrequency();
 		
-		double bTime = _resampleOffset <= bOffset ? (bOffset-_resampleOffset-_resampler.getXPos())/inputFrequency+dmaOffset : (_bufferLength-_resampleOffset +bOffset-_resampler.getXPos())/inputFrequency+dmaOffset;	//[seconds]
+		double bTime = _resampleOffset <= bOffset ? (bOffset-_resampleOffset-_resampler.getXPos())/inputFrequency+dmaOffset : (bufferLength-_resampleOffset +bOffset-_resampler.getXPos())/inputFrequency+dmaOffset;	//[seconds]
 		
-		double diff = bTime- (_blockDuration+ _targetLatencyS);	//seconds
+		double diff = bTime- (blockDuration+ _targetLatencyS);	//seconds
 
 		biquad_cascade_df2T<double, arm_biquad_cascade_df2T_instance_f32, float>(&_bufferLPFilter, &diff, &diff, 1);
 		
 		bool settled=_resampler.addToSampleDiff(diff);
 		
-		if (bTime > _maxLatency || bTime-dmaOffset<= _blockDuration || settled) {	
-			double distance=(_blockDuration+_targetLatencyS-dmaOffset)*inputFrequency+_resampler.getXPos();
+		if (bTime > _maxLatency || bTime-dmaOffset<= blockDuration || settled) {	
+			double distance=(blockDuration+_targetLatencyS-dmaOffset)*inputFrequency+_resampler.getXPos();
 			diff=0.;
-			if (distance > _bufferLength-_noSamplesPerIsr){
-				diff=_bufferLength-_noSamplesPerIsr-distance;
-				distance=_bufferLength-_noSamplesPerIsr;
+			if (distance > bufferLength-_noSamplesPerIsr){
+				diff=bufferLength-_noSamplesPerIsr-distance;
+				distance=bufferLength-_noSamplesPerIsr;
 			}
 			if (distance < 0.){
 				distance=0.;
-				diff=- (_blockDuration+ _targetLatencyS);
+				diff=- (blockDuration+ _targetLatencyS);
 			}
 			double resampleOffsetF=bOffset-distance;
 			_resampleOffset=(int32_t)floor(resampleOffsetF);
 			_resampler.addToPos(resampleOffsetF-_resampleOffset);
 			while (_resampleOffset<0){
-				_resampleOffset+=_bufferLength;
+				_resampleOffset+=bufferLength;
 			}	
 			_input.setResampleOffset(_resampleOffset);
 			__enable_irq();
 
-			//bTime=_blockDuration+_targetLatencyS;
 			preload(&_bufferLPFilter, diff);
 			_resampler.fixStep();		
 		}

@@ -147,6 +147,9 @@ void AudioInputI2S::isr(void)
 
 void AudioInputI2S::update(void)
 {
+	if(_async){
+		return;
+	}
 	audio_block_t *new_left=NULL, *new_right=NULL, *out_left=NULL, *out_right=NULL;
 
 	// allocate 2 new blocks, but if one fails, allocate neither
@@ -203,6 +206,7 @@ void AudioInputI2S::update(void)
 
 void AudioInputI2Sslave::begin(bool async)
 {
+	_async = async;
 	dma.begin(true); // Allocate the DMA channel first
 
 	AudioOutputI2Sslave::config_i2s();
@@ -250,20 +254,15 @@ void AudioInputI2Sslave::begin(bool async)
 
 	I2S1_RCSR = 0;
 	I2S1_RCSR = I2S_RCSR_RE | I2S_RCSR_BCE | I2S_RCSR_FRDE | I2S_RCSR_FR;
-	if (async){
+	if (_async){
 		dma.attachInterrupt(isrResample);
 		update_responsibility=false;
 	}
 	else {
-		//Unfortunately the non-resampling mode does not work in the version at the moment, since the slave input got its own (dummy) update function (see below).
-		//Otherwise it would continuously send out blocks filled with zeros. 
 		dma.attachInterrupt(isr);
 		update_responsibility = update_setup();
 	}
 #endif
-}
-
-void AudioInputI2Sslave::update(void){
 }
 
 void AudioInputI2Sslave::setResampleBuffer(float** buffer, int32_t bufferLength){

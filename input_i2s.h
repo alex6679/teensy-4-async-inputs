@@ -45,6 +45,7 @@ protected:
 	static bool update_responsibility;
 	static DMAChannel dma;
 	static void isr(void);
+	bool _async=false;
 private:
 	static audio_block_t *block_left;
 	static audio_block_t *block_right;
@@ -57,7 +58,6 @@ class AudioInputI2Sslave : public AudioInputI2S
 public:
 	AudioInputI2Sslave(bool async= false) : AudioInputI2S(0) { begin(async); }
 	void begin(bool async);
-	virtual void update(void);
 
 	///@param buffer array of arrays, outer array: array of channels, inner arrays contain the samples of an channel
 	static void setResampleBuffer(float** buffer, int32_t bufferLength);
