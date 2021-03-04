@@ -3,7 +3,7 @@
 #include <Audio.h>
 #include "async_input.h"
 
-#define DEBUG
+//#define DEBUG
 //#define PLOTWAVE
 
 AudioOutputSPDIF3   spdifOut;
@@ -37,6 +37,7 @@ void setup() {
 }
 
 void loop() {
+#ifdef DEBUG
 #ifndef PLOTWAVE
 
 
@@ -66,5 +67,6 @@ void loop() {
 	// Serial.print("Memory max: ");
   	// Serial.println(AudioMemoryUsageMax());
 	delay(500);
+#endif
 #endif
 }
