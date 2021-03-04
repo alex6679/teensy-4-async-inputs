@@ -161,7 +161,7 @@ private:
 	arm_biquad_cascade_df2T_instance_f32 _bufferLPFilter;
 	constexpr static double blockDuration=AUDIO_BLOCK_SAMPLES/AUDIO_SAMPLE_RATE; //[seconds]
 	double _maxLatency=2.*blockDuration; 
-	constexpr static int32_t bufferLength=(int32_t)( 1 + ceil(192000.f/AUDIO_SAMPLE_RATE))*AUDIO_BLOCK_SAMPLES + (int32_t)(ceil(2.f*blockDuration * 192000.f));	//maximum input sample rate is 192kHz
+	constexpr static int32_t bufferLength=(int32_t)( 1 + ceil(192000.f/AUDIO_SAMPLE_RATE))*AUDIO_BLOCK_SAMPLES + (int32_t)(ceil(3.f*blockDuration * 192000.f));	//maximum input sample rate is 192kHz
 	float _buffer[NOCHANNELS][bufferLength];
 	volatile double _bufferedTime;
 	double _inputFrequency;
