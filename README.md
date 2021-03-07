@@ -35,7 +35,7 @@ Returns the actual achieved attenuation of the anti-aliasing filter. If the inpu
 Returns the half length of the resampling filter. Its complete length is 2*(the returned value)+1.
 
 ## TInput
-AsyncAudioInputI2Sslave (input_i2s.h/ input_i2s.h.cpp) represents an example implementation of a TInput class. TInput provides the input data (32bit float) to AsyncAudioInput.
+AsyncAudioInputI2Sslave (input_i2s.h/ input_i2s.h.cpp of this repository) represents an example implementation of a TInput class. TInput provides the input data (32bit float) to AsyncAudioInput.
 
 ## Resampler
 Implements the low level resampling algorithm and anti-aliasing filter (Resampler.h/ Resampler.cpp). It initially computes the anti-aliasing filter and step length (e.g. 2.0 for 88.2kHz to 44.1kHz resampling) for a certain input to output sampling frequency. Afterwards the step length is slighlty adjusted if information about error of the sampling step is provided as done by AsyncAudioInput. This feature is not needed if data with a perfectly known sampling frequency is resampled (like wave files). Input and output data is still 32bit float. This class is already part of the Teensy audio library.
