@@ -40,12 +40,12 @@
 #include <arm_math.h>
 
 
-template <typename I>
+template <typename TInput>
 class AsyncAudioInput : public AudioStream
 {
 public:
 
-	#define NOCHANNELS I::getNumberOfChannels()
+	#define NOCHANNELS TInput::getNumberOfChannels()
 
 	///@param attenuation target attenuation [dB] of the anti-aliasing filter. Only used if newFs<fs. The attenuation can't be reached if the needed filter length exceeds 2*MAX_FILTER_SAMPLES+1
 	///@param minHalfFilterLength If newFs >= fs, the filter length of the resampling filter is 2*minHalfFilterLength+1. If fs y newFs the filter is maybe longer to reach the desired attenuation
@@ -66,7 +66,7 @@ public:
 			quantizer[i]= new Quantizer(AUDIO_SAMPLE_RATE);
 			quantizer[i]->configure(noiseshaping, dither, factor);
 		}
-		_noSamplesPerIsr=I::getNumberOfSamplesPerIsr();
+		_noSamplesPerIsr=TInput::getNumberOfSamplesPerIsr();
 		_resampleOffset=0;
 		__disable_irq();
 		_input.setResampleBuffer(b, bufferLength);
@@ -156,7 +156,7 @@ private:
 	static FrequencyMeasurement frequMeasure;
 	Resampler _resampler;
 	Quantizer* quantizer[NOCHANNELS];
-	I _input;
+	TInput _input;
 	arm_biquad_cascade_df2T_instance_f32 _bufferLPFilter;
 	constexpr static double blockDuration=AUDIO_BLOCK_SAMPLES/AUDIO_SAMPLE_RATE; //[seconds]
 	double _maxLatency=2.*blockDuration; 
@@ -290,8 +290,8 @@ private:
 		_bufferedTime=_targetLatencyS+diff;
 	}
 };
-template<typename I>
-FrequencyMeasurement AsyncAudioInput<I>::frequMeasure(I::getNumberOfSamplesPerIsr());
+template<typename TInput>
+FrequencyMeasurement AsyncAudioInput<TInput>::frequMeasure(TInput::getNumberOfSamplesPerIsr());
 
 
 typedef AsyncAudioInput<AsyncAudioInputI2Sslave> AsyncAudioInputI2S;
