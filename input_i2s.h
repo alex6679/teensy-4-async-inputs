@@ -74,17 +74,18 @@ public:
 	AsyncAudioInputI2Sslave() { begin(); }
 	void begin();
 
+	//interface required by AsyncAudioInput: 
 	///@param buffer array of arrays, outer array: array of channels, inner arrays contain the samples of an channel
 	static void setResampleBuffer(float** buffer, int32_t bufferLength);
 
 	constexpr static int32_t getNumberOfChannels() {return 2;}	
     typedef void (*FrequencyM) ();
 	static void setFrequencyMeasurment(FrequencyM frequencyM);
-
 	static int32_t getBufferOffset();
 	static int32_t getNumberOfSamplesPerIsr();
 	static void setResampleOffset(int32_t offset);
-
+	//======================================
+	
 private:
 	static DMAChannel asyncDma;
 	static void isrResample(void);
