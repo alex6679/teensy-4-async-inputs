@@ -7,7 +7,7 @@ Additionally it performs the following tasks:
 - It monitors the input buffer and provides that information to the Resampler. The Resampler then slightly adjust the sampling step in order to prevent buffer over- and underflow.
 - It implements the AudioStream-update function and sends out audio blocks of the resampled signal.
 ### Constructor and member functions
-Constructor:
+Constructor:  
 **AsyncAudioInput(dither, noiseshaping, attenuation, minHalfFilterLength, maxHalfFilterLength);**
 dither: triangular shaped dither is added at the transition from 32bit float to 16bit integer if true (default: false)
 noiseshaping: noise shaping is applied at the aforementioned transition if true (default: false)
@@ -15,7 +15,7 @@ attenuation: target attenuation of the anti-aliasing filter (default: 100dB). Th
 minHalfFilterLength: half of the guaranteed resampling filter (internally restricted to 80, default: 20). The filter might be longer if needed to achieve the requested attenuation.
 maxHalfFilterLength: Restricts the maximum length of the resampling filter. The maximum half filter length is 80. This parameter can be used to further restrict the length in order to limit the processor usage. 
 
-Member functions:
+Member functions:  
 **getBufferedTime();**
 Returns the buffered time in seconds. The buffered time is the duration of the incoming samples which are not resampled yet. The step width of the resampling algorithm is constantly slightly adjusted to keep the buffered time closely to the target latency. The difference between the target latency and the buffered time is typically smaller than 1 microsecond.
 
@@ -33,4 +33,12 @@ Returns the actual achieved attenuation of the anti-aliasing filter. If the inpu
 
 **getHalfFilterLength();**
 Returns the half length of the resampling filter. Its complete length is 2*(the returned value)+1.
+
+## TInput
+TInput provides the input data to AsyncAudioInput. It needs to implement the same interface as AsyncAudioInputI2Sslave in input_i2s.h.
+
+## Resampler
+Implements the low level resampling algorithm and anti-aliasing filter (Resampler.h/ Resampler.cpp). It initially computes the anti-aliasing filter and step length (e.g. 2.0 for 88.2kHz to 44.1kHz resampling) for a certain input to output sampling frequency. Afterwards the step length is slighlty adjusted if information about error of the sampling step is provided as done by AsyncAudioInput. This feature is not needed if data with a perfectly known sampling frequency is resampled (like wave files).
+## Quantizer
+## FrequencyMeasurement
 
