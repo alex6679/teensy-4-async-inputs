@@ -3,7 +3,7 @@
 #include <Audio.h>
 #include "async_input.h"
 
-//#define DEBUG
+#define DEBUG
 //#define PLOTWAVE
 
 AudioOutputSPDIF3   spdifOut;
@@ -11,12 +11,13 @@ AudioOutputSPDIF3   spdifOut;
 Plotter plotter(8);  //only plot every 6th sample
 #endif
 
-bool dither = false;
-bool noiseshaping = false;
-float attenuation = 100;
-int32_t minHalfFilterLength=80;
-int32_t maxHalfFilterLength=80;
-AsyncAudioInputI2Sslave i2sSlaveInput(dither, noiseshaping, attenuation, minHalfFilterLength, maxHalfFilterLength);
+// bool dither = false;
+// bool noiseshaping = false;
+// float attenuation = 100;
+// int32_t minHalfFilterLength=80;
+// int32_t maxHalfFilterLength=1;
+// AsyncAudioInputI2Sslave i2sSlaveInput(dither, noiseshaping, attenuation, minHalfFilterLength, maxHalfFilterLength);
+AsyncAudioInputI2S i2sSlaveInput;
 AudioConnection          patchCord1(i2sSlaveInput, 0, spdifOut, 0);
 AudioConnection          patchCord2(i2sSlaveInput, 1, spdifOut, 1);
 #ifdef PLOTWAVE

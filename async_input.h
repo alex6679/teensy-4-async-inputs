@@ -51,8 +51,7 @@ public:
 	///@param minHalfFilterLength If newFs >= fs, the filter length of the resampling filter is 2*minHalfFilterLength+1. If fs y newFs the filter is maybe longer to reach the desired attenuation
 	AsyncAudioInput(bool dither=false, bool noiseshaping=false,float attenuation=100, int32_t minHalfFilterLength=20, int32_t maxHalfFilterLength= 80):
 		AudioStream(0, NULL),
-		_resampler(attenuation, minHalfFilterLength, maxHalfFilterLength),
-		_input(true)
+		_resampler(attenuation, minHalfFilterLength, maxHalfFilterLength)
 		{
 		_inputFrequency=-1.;
 		const float factor = powf(2, 15)-1.f; // to 16 bit audio
@@ -123,13 +122,6 @@ public:
 		double l=_targetLatencyS;
 		AudioInterrupts();
 		return l ;
-	}
-
-	double getLastValidFrequency() const{
-		AudioNoInterrupts();
-		float f=frequMeasure.getLastValidFrequency();
-		AudioInterrupts();
-		return f;
 	}
 
 	double getAttenuation() const{
@@ -302,6 +294,6 @@ template<typename I>
 FrequencyMeasurement AsyncAudioInput<I>::frequMeasure(I::getNumberOfSamplesPerIsr());
 
 
-typedef AsyncAudioInput<AudioInputI2Sslave> AsyncAudioInputI2Sslave;
+typedef AsyncAudioInput<AsyncAudioInputI2Sslave> AsyncAudioInputI2S;
 
 #endif

@@ -27,12 +27,9 @@
 #ifndef _input_i2s_h_
 #define _input_i2s_h_
 
-#include "Arduino.h"
-#include "AudioStream.h"
-#include "DMAChannel.h"
-
-#include "FrequencyMeasurement.h"
-#include <functional>
+#include <Arduino.h>
+#include <AudioStream.h>
+#include <DMAChannel.h>
 
 class AudioInputI2S : public AudioStream
 {
@@ -43,21 +40,39 @@ public:
 protected:	
 	AudioInputI2S(int dummy): AudioStream(0, NULL) {} // to be used only inside AudioInputI2Sslave !!
 	static bool update_responsibility;
+
+#if !defined(KINETISL)
 	static DMAChannel dma;
 	static void isr(void);
-	bool _async=false;
+#else
+	static DMAChannel dma1, dma2;
+	static void isr1(void);
+	static void isr2(void);
+#endif
+
 private:
 	static audio_block_t *block_left;
 	static audio_block_t *block_right;
+#if !defined(KINETISL)	
 	static uint16_t block_offset;
+#endif	
 };
 
 
 class AudioInputI2Sslave : public AudioInputI2S
 {
 public:
-	AudioInputI2Sslave(bool async= false) : AudioInputI2S(0) { begin(async); }
-	void begin(bool async);
+	AudioInputI2Sslave(void) : AudioInputI2S(0) { begin(); }
+	void begin(void);	
+};
+
+
+#if defined(__IMXRT1062__)	
+class AsyncAudioInputI2Sslave
+{
+public:
+	AsyncAudioInputI2Sslave() { begin(); }
+	void begin();
 
 	///@param buffer array of arrays, outer array: array of channels, inner arrays contain the samples of an channel
 	static void setResampleBuffer(float** buffer, int32_t bufferLength);
@@ -65,13 +80,13 @@ public:
 	constexpr static int32_t getNumberOfChannels() {return 2;}	
     typedef void (*FrequencyM) ();
 	static void setFrequencyMeasurment(FrequencyM frequencyM);
-	//friend void dma_ch1_isr(void);
 
 	static int32_t getBufferOffset();
 	static int32_t getNumberOfSamplesPerIsr();
 	static void setResampleOffset(int32_t offset);
 
 private:
+	static DMAChannel asyncDma;
 	static void isrResample(void);
 	
 	static volatile int32_t buffer_offset;
@@ -80,5 +95,9 @@ private:
 	static int32_t sampleBufferLength;
 	static FrequencyM frequencyM;	
 };
+#endif
+
+
+
 
 #endif
