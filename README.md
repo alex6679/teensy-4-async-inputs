@@ -1,8 +1,12 @@
 # teensy-4-async-inputs
-The high level entry point is the AsyncAudioInput template class (implemented in async_input.h). It inherits from AudioStream and can thus be used as block in the Teensy audio lib.
-![pipeline](https://github.com/[alex6679]/teensy-4-async-inputs/blob/main/resampling_pipeline.png?raw=true)
+## AsyncAudioInput
+The high level entry point is the AsyncAudioInput template class (implemented in async_input.h). It inherits from AudioStream and can thus be used as block in the Teensy audio lib. It implements the following pipline:
 ![pipeline](https://github.com/alex6679/teensy-4-async-inputs/blob/main/imgs/resampling_pipeline.png)
-
+Additionally it performs the following tasks:
+- It uses a 'FrequencyMeasurement' object (see below) to retrieve the current sampling frequency of the input data and configures the Resampler accordingly.
+- It monitors the input buffer and provides that information to the Resampler. The Resampler then slightly adjust the sampling step in order to prevent buffer over- and underflow.
+- It implements the AudioStream-update function and sends out audio blocks of the resampled signal.
+### Constructor and member functions
 Constructor:
 **AsyncAudioInput(dither, noiseshaping, attenuation, minHalfFilterLength, maxHalfFilterLength);**
 dither: triangular shaped dither is added at the transition from 32bit float to 16bit integer if true (default: false)
