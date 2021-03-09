@@ -38,7 +38,7 @@ bool AudioInputI2S::update_responsibility = false;
 DMAChannel AudioInputI2S::dma(false);
 
 // ============== needed for resampling
-const float toFloatAudio= 1.f/pow(2., 15.); //1.f/pow(2., 31.);
+const float toFloatAudio= (float)1./pow(2., 15.); //(float)1./pow(2., 31.);
 constexpr int32_t noSamplerPerIsr=AUDIO_BLOCK_SAMPLES/2;
 AsyncAudioInputI2Sslave::FrequencyM AsyncAudioInputI2Sslave::frequencyM;	
 float* AsyncAudioInputI2Sslave::sampleBuffer[] ={NULL, NULL} ;

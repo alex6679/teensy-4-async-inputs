@@ -43,7 +43,7 @@ void FrequencyMeasurement::computeFrequency(){
 	}
 	float f=_samplesAcc/_durationAcc;
 	if (_fillId==_durations.size()+1){
-		preload(&_lpFilter,f);
+		preload(&_lpFilter,(double)f);
 		_fillId++;
 	}
     __enable_irq();
