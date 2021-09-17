@@ -1,0 +1,1 @@
+The example shows how the input of AudioInputI2Sslave can be resampled. The files input_i2s.cpp, input_i2s.h and output_i2s.h of the Teensy library needs to be replaced with the versions of this example in order to get the example running.
