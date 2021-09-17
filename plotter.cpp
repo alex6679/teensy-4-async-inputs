@@ -27,14 +27,19 @@ void Plotter::update(void) {
             for (uint8_t j =0; j< noChannels; j++){
                 if(dataPtr[j]){
                     if(i%_step==0){
-                        Serial.print(*dataPtr[j]);                  
-                        Serial.print(" ");
+                        if(Serial){
+							Serial.print(j == 0 ? "Left:" : "Right:");
+							Serial.print(*dataPtr[j]);
+							Serial.print(" ");
+                        }
                     }
                     ++dataPtr[j];
                 }
             }
             if(i%_step==0){
-                Serial.println();
+                if (Serial){
+                    Serial.println();
+                }
             }
         }
     }

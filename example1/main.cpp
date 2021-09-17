@@ -33,7 +33,7 @@ void setup() {
     #endif
   #endif
   AudioMemory(15);
- 
+
 
 }
 
@@ -48,7 +48,7 @@ void loop() {
 	Serial.print(bufferedTine*1e6,2);
 	Serial.print(", target: ");
 	Serial.println(targetLatency*1e6,2);
-	
+
 	double pUsageIn=i2sSlaveInput.processorUsage(); 
 	Serial.print("processor usage [%]: ");
 	Serial.println(pUsageIn);

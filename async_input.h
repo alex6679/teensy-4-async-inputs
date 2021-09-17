@@ -32,7 +32,6 @@
 #include "Quantizer.h"
 #include "biquad.h"
 #include "FrequencyMeasurement.h"
-#include "input_i2s.h"
 #include "AudioStream.h"
 #include "Audio.h"
 #include "DMAChannel.h"
@@ -293,7 +292,5 @@ private:
 template<typename TInput>
 FrequencyMeasurement AsyncAudioInput<TInput>::frequMeasure(TInput::getNumberOfSamplesPerIsr());
 
-
-typedef AsyncAudioInput<AsyncAudioInputI2Sslave> AsyncAudioInputI2S;
 
 #endif
