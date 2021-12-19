@@ -1,3 +1,5 @@
+!!works currently only with my fork of the Teensy Audio library!!
+
 # teensy-4-async-inputs
 ## AsyncAudioInput
 The high level entry point is the AsyncAudioInput template class (implemented in async_input.h). It inherits from AudioStream and can thus be used as block in the Teensy audio lib. It implements the following pipline:
