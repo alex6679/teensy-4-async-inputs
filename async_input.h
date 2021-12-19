@@ -83,9 +83,9 @@ public:
 
 	virtual void update(void)
 	{	
-		frequMeasure.computeFrequency();
-		configure();
-		monitorResampleBuffer();	//important first call 'monitorResampleBuffer' then 'resample'	
+		frequMeasure.computeFrequency();	
+		bool newConfiguration = configure();				//important configure() before monitorResampleBuffer()
+		monitorResampleBuffer(newConfiguration);	//important first call 'monitorResampleBuffer' then 'resample'
 		audio_block_t *blocks[NOCHANNELS];
 		audio_block_t** b=blocks;
 		for (uint8_t i =0; i< NOCHANNELS; i++){
@@ -166,6 +166,7 @@ private:
 	int32_t _noSamplesPerIsr;
 	int32_t _resampleOffset;
 	double _targetLatencyS;	//target latency [seconds]
+	uint32_t _updateLast=0;
 	
 
 	void resample(audio_block_t **blocks, int32_t& block_offset){
@@ -177,14 +178,12 @@ private:
 		int32_t bOffset=_input.getBufferOffset();
 		__enable_irq();
 
-		uint16_t inputBufferStop = bOffset >= _resampleOffset ? bOffset-_resampleOffset : bufferLength-_resampleOffset;
+		int32_t inputBufferStop = bOffset >= _resampleOffset ? bOffset-_resampleOffset : bufferLength-_resampleOffset;
 		if (inputBufferStop==0){
 			return;
 		}
 		
-		uint16_t processedLength=0;
-		uint16_t outputCount=0;
-		uint16_t outputLength=AUDIO_BLOCK_SAMPLES;
+		int32_t processedLength=0;
 		float outputs[NOCHANNELS][AUDIO_BLOCK_SAMPLES];
 		float* outputsPtr[NOCHANNELS];
 		float* inputs[NOCHANNELS];
@@ -192,17 +191,17 @@ private:
 			inputs[i]=_buffer[i]+_resampleOffset;
 			outputsPtr[i]=&(outputs[i][0]);
 		}
-		_resampler.resample<NOCHANNELS>(inputs, inputBufferStop, processedLength, outputsPtr, outputLength, outputCount);
+		_resampler.resample<NOCHANNELS>(inputs, inputBufferStop, processedLength, outputsPtr, AUDIO_BLOCK_SAMPLES, block_offset);
 
 		_resampleOffset=(_resampleOffset+processedLength)%bufferLength;
-		block_offset=outputCount;	
 
 		if (bOffset > _resampleOffset && block_offset< AUDIO_BLOCK_SAMPLES){
 			inputBufferStop= bOffset-_resampleOffset;
-			outputLength=AUDIO_BLOCK_SAMPLES-block_offset;
+			int32_t outputLength=AUDIO_BLOCK_SAMPLES-block_offset;
 			for (uint8_t i =0 ; i< NOCHANNELS; i++){
 				inputs[i]=_buffer[i]+_resampleOffset;
 			}
+			int32_t outputCount=0;
 			_resampler.resample<NOCHANNELS>(inputs, inputBufferStop, processedLength, outputsPtr, outputLength, outputCount);		
 			_resampleOffset=(_resampleOffset+processedLength)%bufferLength;
 			block_offset+=outputCount;
@@ -218,8 +217,9 @@ private:
 	static void updateFrequMeasure(){
 		frequMeasure.update();
 	}
-	
-	void configure(){
+
+	bool configure(){
+		bool newConfiguration=false;
 		const double inputF=frequMeasure.getFrequency();	//returns: -1 ... invalid frequency
 		if (inputF > 0.){
 			//we got a valid sample frequency
@@ -229,63 +229,142 @@ private:
 				_inputFrequency=inputF;		
 				_targetLatencyS=max(0.001,(_noSamplesPerIsr*3./2./_inputFrequency));
 				_maxLatency=max(2.*blockDuration, 2*_noSamplesPerIsr/_inputFrequency);
-				const int32_t targetLatency=round(_targetLatencyS*inputF);
+				_resampler.configure(_inputFrequency,AUDIO_SAMPLE_RATE);
+				newConfiguration=true;
 				__disable_irq();
 				int32_t bOffset=_input.getBufferOffset();
-				_resampleOffset =  targetLatency <=  bOffset ? bOffset - targetLatency : bufferLength -(targetLatency-bOffset);
-				_input.setResampleOffset(_resampleOffset);
-				__enable_irq();	
-				_resampler.configure(_inputFrequency,AUDIO_SAMPLE_RATE);		
+				_input.setResampleOffset(bOffset);	//we want 'monitorResampleBuffer' to set the correct _resampleOffset!!!
+				__enable_irq();
+				_resampleOffset=bOffset;
+				_updateLast=(uint32_t)(-1);
 			}
 		}
+		return newConfiguration;
 	}
 
-	void monitorResampleBuffer(){
+	// void monitorResampleBuffer(){
+	// 	if(!_resampler.initialized()){
+	// 		return;
+	// 	}
+
+	// 	__disable_irq();
+
+	// 	int32_t bOffset=_input.getBufferOffset();
+	// 	const double dmaOffset=(micros()-frequMeasure.getTimeOfLastUpdate())*1e-6;	//[seconds]
+
+	// 	double inputFrequency=frequMeasure.getLastValidFrequency();
+		
+	// 	double bTime = _resampleOffset <= bOffset ? (bOffset-_resampleOffset-_resampler.getXPos())/inputFrequency+dmaOffset : (bufferLength-_resampleOffset +bOffset-_resampler.getXPos())/inputFrequency+dmaOffset;	//[seconds]
+		
+	// 	double diff = bTime- (blockDuration+ _targetLatencyS);	//seconds
+
+	// 	biquad_cascade_df2T<double, arm_biquad_cascade_df2T_instance_f32, float>(&_bufferLPFilter, &diff, &diff, 1);
+		
+	// 	bool settled=_resampler.addToSampleDiff(diff);
+		
+	// 	if (bTime > _maxLatency || bTime-dmaOffset<= blockDuration || settled) {	
+	// 		double distance=(blockDuration+_targetLatencyS-dmaOffset)*inputFrequency+_resampler.getXPos();
+	// 		diff=0.;
+	// 		if (distance > bufferLength-_noSamplesPerIsr){
+	// 			diff=bufferLength-_noSamplesPerIsr-distance;
+	// 			distance=bufferLength-_noSamplesPerIsr;
+	// 		}
+	// 		if (distance < 0.){
+	// 			distance=0.;
+	// 			diff=- (blockDuration+ _targetLatencyS);
+	// 		}
+	// 		double resampleOffsetF=bOffset-distance;
+	// 		_resampleOffset=(int32_t)floor(resampleOffsetF);
+	// 		_resampler.addToPos(resampleOffsetF-_resampleOffset);
+	// 		while (_resampleOffset<0){
+	// 			_resampleOffset+=bufferLength;
+	// 		}	
+	// 		_input.setResampleOffset(_resampleOffset);
+	// 		__enable_irq();
+
+	// 		preload(&_bufferLPFilter, (float)diff);
+	// 		_resampler.fixStep();		
+	// 	}
+	// 	else {
+	// 		__enable_irq();
+	// 	}
+	// 	_bufferedTime=_targetLatencyS+diff;
+	// }
+	void monitorResampleBuffer(bool  newConfiguration){
+		__disable_irq();
+		uint32_t updateCurrent=ARM_DWT_CYCCNT;
+		double dmaOffset=(double)(updateCurrent-frequMeasure.getTimeOfLastUpdate())/(double)F_CPU_ACTUAL;	//[seconds]	
+		uint32_t isrDC=frequMeasure.getLastDuration();
+		int32_t bOffset=_input.getBufferOffset();
+		__enable_irq();	
+
 		if(!_resampler.initialized()){
 			return;
 		}
 
-		__disable_irq();
+		double inputFrequency= AUDIO_SAMPLE_RATE*_resampler.getStep();
 
-		int32_t bOffset=_input.getBufferOffset();
-		const double dmaOffset=(micros()-frequMeasure.getTimeOfLastUpdate())*1e-6;	//[seconds]
+		//here we try to compensate for timing variations in the calls of 'update' and 'isr'
+		double interrupJitter=0.;
+		double isrDiff;
+		if (_updateLast != (uint32_t)-1){
+			double timeSinceLast = (double)(updateCurrent-_updateLast)/(double)F_CPU_ACTUAL;	//[seconds]
+			interrupJitter = blockDuration-timeSinceLast;
+			if (interrupJitter > 0.){
+				//if interrupJitter > 0 then 'update' was called too fast. This only happens, if the preceding call was too late
+				interrupJitter=0.;
+			}
+			//Until now we 'interrupJitter' captures timing variations of 'update'. But if 'update' and 'isr' were both delayed, we apply a wrong correction.
+			//Therefore we try to estimate now if the 'isr' call was also delayed:
+			isrDiff= _noSamplesPerIsr / inputFrequency - (double)isrDC/(double)F_CPU_ACTUAL;	// _noSamplesPerIsr / inputFrequency is the exptect time between isr calls
+			if (isrDiff < 0.){
+				//the isr call was also delayed -> dmaOffset is already quite correct and 'interrupJitter' needs to be corrected
+				interrupJitter-=isrDiff;
+			}
+		}
+		_updateLast=updateCurrent;
 
-		double inputFrequency=frequMeasure.getLastValidFrequency();
-		
-		double bTime = _resampleOffset <= bOffset ? (bOffset-_resampleOffset-_resampler.getXPos())/inputFrequency+dmaOffset : (bufferLength-_resampleOffset +bOffset-_resampler.getXPos())/inputFrequency+dmaOffset;	//[seconds]
-		
-		double diff = bTime- (blockDuration+ _targetLatencyS);	//seconds
+		double resamplerPos = _resampler.getXPos();
+		double bTime = _resampleOffset <= bOffset ?
+			(bOffset-(_resampleOffset+resamplerPos))/inputFrequency :
+			(bufferLength-(_resampleOffset+resamplerPos) + bOffset )/inputFrequency;	//[seconds]
+		double targetOffset = blockDuration + _targetLatencyS - interrupJitter - dmaOffset;
+		double diff = bTime-targetOffset;	//seconds
+		//double diffOld = diff;
 
 		biquad_cascade_df2T<double, arm_biquad_cascade_df2T_instance_f32, float>(&_bufferLPFilter, &diff, &diff, 1);
-		
-		bool settled=_resampler.addToSampleDiff(diff);
-		
-		if (bTime > _maxLatency || bTime-dmaOffset<= blockDuration || settled) {	
-			double distance=(blockDuration+_targetLatencyS-dmaOffset)*inputFrequency+_resampler.getXPos();
-			diff=0.;
-			if (distance > bufferLength-_noSamplesPerIsr){
-				diff=bufferLength-_noSamplesPerIsr-distance;
-				distance=bufferLength-_noSamplesPerIsr;
+
+		bool settled=false;
+		if (!newConfiguration){
+			settled=_resampler.updateIncrement(diff);
+			//we updated the step widht -> lets update the buffered time, so that we can see if there are really enough samples in the buffer
+			bTime*=inputFrequency;
+			inputFrequency = AUDIO_SAMPLE_RATE * _resampler.getStep();	//we need to update the inputfrequency since we called 'addToSampleDiff'
+			bTime/=inputFrequency;
+			//================================================================================================================================
+		}
+		if (bTime > _maxLatency || bTime <= blockDuration || settled || newConfiguration) {
+			if (targetOffset < blockDuration + resamplerPos/inputFrequency ||
+				targetOffset > 2.*blockDuration + _targetLatencyS){
+				if (dmaOffset < 0. || dmaOffset > _noSamplesPerIsr / inputFrequency){
+					dmaOffset =0.5*_noSamplesPerIsr / inputFrequency; //we don't know when the last dma transfer happened. The best we can do is to estimate it.
+				}
+				targetOffset = blockDuration + _targetLatencyS-  dmaOffset;	
 			}
-			if (distance < 0.){
-				distance=0.;
-				diff=- (blockDuration+ _targetLatencyS);
-			}
-			double resampleOffsetF=bOffset-distance;
-			_resampleOffset=(int32_t)floor(resampleOffsetF);
-			_resampler.addToPos(resampleOffsetF-_resampleOffset);
-			while (_resampleOffset<0){
-				_resampleOffset+=bufferLength;
-			}	
+			double targetOffsetSamples = targetOffset*inputFrequency;
+			const int32_t targetOffsetI=ceil(targetOffsetSamples);
+			__disable_irq();
+			_resampleOffset =  targetOffsetI <= bOffset ? bOffset - targetOffsetI : bufferLength -(targetOffsetI-bOffset);
 			_input.setResampleOffset(_resampleOffset);
 			__enable_irq();
+			//correct for the integer resample offset
+			_resampler.setPos((double)targetOffsetI-targetOffsetSamples);
 
-			preload(&_bufferLPFilter, (float)diff);
-			_resampler.fixStep();		
+			preload(&_bufferLPFilter, 0.);
+			_resampler.fixIncrement();	
+			diff = 0.;
 		}
-		else {
-			__enable_irq();
-		}
+		
 		_bufferedTime=_targetLatencyS+diff;
 	}
 };

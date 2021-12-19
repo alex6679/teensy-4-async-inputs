@@ -12,6 +12,7 @@ class FrequencyMeasurement
         float getFrequency() const;
         float getLastValidFrequency() const;
         uint32_t getTimeOfLastUpdate() const;
+        uint32_t getLastDuration() const;
         void computeFrequency();
         void update();
         void reset();
@@ -26,12 +27,11 @@ class FrequencyMeasurement
         double _biquadState[2]={0.f, 0.f};
         uint8_t _fillId;
         uint8_t _durationsId;
+        std::array<uint32_t,25> _durations;
 
-        std::array<int32_t,25> _durations;
-
-	    uint32_t _microsFirst;
-        float _samplesAcc;
-        float _durationAcc;
+	    uint32_t _timeLast;
+        double _samplesAcc;
+        uint32_t _durationAcc;
 
 };
 
